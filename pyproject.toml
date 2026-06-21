@@ -1,0 +1,87 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gnews-agent"
+version = "0.1.0"
+description = "Persistent, semantic, evaluated news intelligence layer for AI agents — built on top of GNews."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Muhammad Abdullah", email = "ranahaani@gmail.com" },
+]
+keywords = ["news", "rag", "mcp", "agent", "claude-skill", "gnews", "semantic-search"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Text Processing :: Indexing",
+]
+
+dependencies = [
+    "gnews>=0.8.2",
+    "chromadb>=0.5,<0.6",
+    "sentence-transformers>=3.0",
+    "litellm>=1.80",
+    "fastmcp>=2.0",
+    "apscheduler>=3.10",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+openai   = ["openai>=1.0"]
+fulltext = ["trafilatura>=1.6", "lxml_html_clean>=0.3"]
+lance    = ["lancedb>=0.6"]
+qdrant   = ["qdrant-client>=1.9"]
+evals    = ["deepeval>=1.0", "langfuse>=2.0"]
+all      = ["gnews-agent[openai,fulltext,lance]"]
+dev      = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+gnews-agent = "gnews_agent.cli:main"
+
+[project.urls]
+Homepage      = "https://github.com/ranahaani/gnews-agent"
+Repository    = "https://github.com/ranahaani/gnews-agent"
+Issues        = "https://github.com/ranahaani/gnews-agent/issues"
+Documentation = "https://github.com/ranahaani/gnews-agent#readme"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gnews_agent", "mcp_server"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["gnews_agent"]
+omit = ["gnews_agent/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501"]  # line length handled by formatter, not lint

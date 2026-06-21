@@ -1,0 +1,47 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Runtime data — gnews-agent local persistence
+.gnews_agent/
+*.db
+*.sqlite
+*.sqlite3
+chroma/
+lance/
+
+# Local env
+.env
+.env.local
+
+# Build artifacts that crept in earlier (parent dir had these as wheels)
+*.whl
