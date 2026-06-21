@@ -47,9 +47,33 @@ def test_config_defaults_resolve(tmp_path, monkeypatch):
     assert cfg.max_fetch_results <= 100  # keep temporal filters precise (see GNews 0.8.2)
 
 
-def test_news_memory_raises_for_unwired_methods(tmp_path):
-    cfg = NewsMemoryConfig(db_path=tmp_path / "news.db", vector_path=tmp_path / "chroma")
-    memory = NewsMemory(config=cfg)
-    for method in ("ingest", "search", "timeline", "brief", "sentiment", "stats"):
-        with pytest.raises(NotImplementedError):
-            getattr(memory, method)("OpenAI") if method != "stats" else getattr(memory, method)()
+def test_news_memory_unwired_methods_raise(tmp_path):
+    """Stage 2/3/5 methods still raise; ingest/stats are implemented (Stage 1)."""
+    from tests.conftest import FakeEmbedder, FakeVectorStore
+    from gnews_agent.storage.sqlite_store import SqliteStore
+    from gnews_agent.ingestion.fetcher import Fetcher
+    from tests.test_fetcher import FakeGNews
+
+    cfg = NewsMemoryConfig(
+        db_path=tmp_path / "news.db",
+        vector_path=tmp_path / "chroma",
+        embed_model="fake-embed",
+        embed_dim=8,
+    )
+    memory = NewsMemory(
+        config=cfg,
+        fetcher=Fetcher(gnews_client=FakeGNews(), min_interval_seconds=0),
+        embedder=FakeEmbedder(),
+        sqlite_store=SqliteStore(cfg.db_path),
+        vector_store=FakeVectorStore(),
+    )
+    with pytest.raises(NotImplementedError):
+        memory.search("anything")
+    with pytest.raises(NotImplementedError):
+        memory.timeline("OpenAI")
+    with pytest.raises(NotImplementedError):
+        memory.brief("OpenAI")
+    with pytest.raises(NotImplementedError):
+        memory.sentiment("OpenAI")
+    with pytest.raises(NotImplementedError):
+        memory.monitor(["OpenAI"])
