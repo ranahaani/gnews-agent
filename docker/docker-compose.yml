@@ -1,0 +1,19 @@
+services:
+  gnews-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: ranahaani/gnews-agent:0.1.0
+    container_name: gnews-agent
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      # Required only for brief()/sentiment(); search/ingest/timeline are keyless.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GNEWS_AGENT_LLM_PROVIDER=${GNEWS_AGENT_LLM_PROVIDER:-openai}
+      - GNEWS_AGENT_LLM_MODEL=${GNEWS_AGENT_LLM_MODEL:-gpt-4o-mini}
