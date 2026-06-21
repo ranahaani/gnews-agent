@@ -11,7 +11,11 @@ import sqlite3
 import time
 from typing import Any
 
+from gnews_agent.ai.client import LLMClient, LLMConfig
+from gnews_agent.ai.sentiment import score_sentiment, score_sentiment_timeline
+from gnews_agent.ai.summarizer import make_brief
 from gnews_agent.config import NewsMemoryConfig
+from gnews_agent.exceptions import LLMKeyMissingError
 from gnews_agent.ingestion.embedder import Embedder, make_embedder
 from gnews_agent.ingestion.enricher import enriched_text
 from gnews_agent.ingestion.fetcher import Fetcher
@@ -34,6 +38,7 @@ class NewsMemory:
         embedder: Embedder | None = None,
         sqlite_store: SqliteStore | None = None,
         vector_store: VectorStore | None = None,
+        llm_client: LLMClient | None = None,
         **overrides: Any,
     ) -> None:
         self.config = config or NewsMemoryConfig(**overrides)
@@ -57,6 +62,7 @@ class NewsMemory:
             max_results=self.config.max_fetch_results,
             min_interval_seconds=self.config.fetch_min_interval_seconds,
         )
+        self._llm = llm_client  # built lazily by _get_llm()
 
     # ------------------------------------------------------------------
     # ingestion
@@ -283,11 +289,69 @@ class NewsMemory:
             "topic": row.get("topic"),
         }
 
-    def brief(self, topic: str, **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("NewsMemory.brief lands in Stage 3")
+    # ------------------------------------------------------------------
+    # AI layer
+    # ------------------------------------------------------------------
 
-    def sentiment(self, topic: str, **kwargs: Any) -> dict[str, Any]:
-        raise NotImplementedError("NewsMemory.sentiment lands in Stage 3")
+    def brief(
+        self,
+        topic: str,
+        *,
+        days: int = 7,
+        max_articles: int = 20,
+        include_citations: bool = True,
+    ) -> dict[str, Any]:
+        """Cited brief on ``topic`` for the last ``days`` days.
+
+        Requires an LLM key — raises :class:`LLMKeyMissingError` otherwise.
+        v1 ships without story clustering; articles are passed in
+        recency-blended search order.
+        """
+        articles = self.search(topic, days=days, limit=max_articles)
+        if not articles:
+            return {
+                "summary": f"No articles for {topic!r} in the last {days} days.",
+                "citations": [],
+                "sentiment": "neutral",
+                "article_count": 0,
+            }
+        llm = self._get_llm()
+        result = make_brief(llm, topic=topic, days=days, articles=articles)
+        if not include_citations:
+            result.pop("citations", None)
+        return result
+
+    def sentiment(
+        self,
+        topic: str,
+        *,
+        days: int = 14,
+        timeline: bool = False,
+    ) -> dict[str, Any]:
+        """Sentiment over the corpus for ``topic`` — optional day-by-day breakdown."""
+        articles = self.search(topic, days=days, limit=50)
+        llm = self._get_llm()
+        if timeline:
+            return {
+                "overall": _aggregate_overall(score_sentiment(llm, topic=topic, articles=articles)),
+                "timeline": score_sentiment_timeline(llm, topic=topic, articles=articles),
+                "article_count": len(articles),
+            }
+        return score_sentiment(llm, topic=topic, articles=articles)
+
+    def _get_llm(self) -> LLMClient:
+        if self._llm is not None:
+            return self._llm
+        if not self.config.llm_provider or not self.config.llm_model:
+            raise LLMKeyMissingError(
+                "brief()/sentiment() require llm_provider + llm_model on NewsMemoryConfig. "
+                "Set them explicitly or pass an LLMClient when constructing NewsMemory."
+            )
+        self._llm = LLMClient(LLMConfig(
+            provider=self.config.llm_provider,
+            model=self.config.llm_model,
+        ))
+        return self._llm
 
     def monitor(self, topics: list[str], **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError("NewsMemory.monitor lands alongside the MCP server in Stage 5")
@@ -301,3 +365,12 @@ class NewsMemory:
 
     def close(self) -> None:
         self._sqlite.close()
+
+
+def _aggregate_overall(corpus_level: dict[str, Any]) -> dict[str, Any]:
+    """Pluck the corpus-wide verdict for the timeline mode's ``overall`` slot."""
+    return {
+        "label": corpus_level.get("overall", "neutral"),
+        "score": corpus_level.get("score", 0.0),
+        "rationale": corpus_level.get("rationale"),
+    }

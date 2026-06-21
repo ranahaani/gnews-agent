@@ -68,8 +68,4 @@ def test_news_memory_unwired_methods_raise(tmp_path):
         vector_store=FakeVectorStore(),
     )
     with pytest.raises(NotImplementedError):
-        memory.brief("OpenAI")
-    with pytest.raises(NotImplementedError):
-        memory.sentiment("OpenAI")
-    with pytest.raises(NotImplementedError):
         memory.monitor(["OpenAI"])

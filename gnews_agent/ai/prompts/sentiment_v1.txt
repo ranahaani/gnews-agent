@@ -1,0 +1,15 @@
+You are a sentiment analyst. Given the article list below, judge the
+overall sentiment toward the topic across the corpus.
+
+Topic: {topic}
+Articles:
+{articles_block}
+
+Respond with a single JSON object:
+{{
+  "overall":   "positive" | "negative" | "neutral" | "mixed",
+  "score":     <float between -1.0 (very negative) and 1.0 (very positive)>,
+  "rationale": "<one or two sentences citing concrete article evidence>"
+}}
+
+Return only the JSON. No prose before or after.
