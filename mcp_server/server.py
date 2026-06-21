@@ -109,8 +109,8 @@ def build_app():
 
     mcp = FastMCP("gnews-agent")
 
-    @mcp.tool()
-    def search_news_tool(  # noqa: D401
+    @mcp.tool(name="search_news")
+    def _search_news(
         query: str,
         days: int = 7,
         country: str = "US",
@@ -121,8 +121,8 @@ def build_app():
         """Semantic search over locally-stored articles."""
         return search_news(query, days, country, language, semantic, limit)
 
-    @mcp.tool()
-    def get_brief_tool(
+    @mcp.tool(name="get_brief")
+    def _get_brief(
         topic: str,
         days: int = 7,
         max_articles: int = 20,
@@ -131,13 +131,13 @@ def build_app():
         """Cited LLM brief on a topic. Requires LLM key."""
         return get_brief(topic, days, max_articles, include_citations)
 
-    @mcp.tool()
-    def get_sentiment_tool(topic: str, days: int = 14, timeline: bool = False) -> dict[str, Any]:
+    @mcp.tool(name="get_sentiment")
+    def _get_sentiment(topic: str, days: int = 14, timeline: bool = False) -> dict[str, Any]:
         """Sentiment scoring for a topic. Requires LLM key."""
         return get_sentiment(topic, days, timeline)
 
-    @mcp.tool()
-    def get_timeline_tool(
+    @mcp.tool(name="get_timeline")
+    def _get_timeline(
         topic: str,
         start_date: str | None = None,
         end_date: str | None = None,
@@ -146,8 +146,8 @@ def build_app():
         """Day-by-day article counts (keyless)."""
         return get_timeline(topic, start_date, end_date, days)
 
-    @mcp.tool()
-    def monitor_topic_tool(
+    @mcp.tool(name="monitor_topic")
+    def _monitor_topic(
         topics: list[str],
         threshold: int = 5,
         webhook_url: str | None = None,

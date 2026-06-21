@@ -30,7 +30,11 @@ class LLMConfig:
     provider: str
     model: str
     temperature: float = 0.1
-    max_tokens: int = 1500
+    # 4000 gives the brief prompt (~200-400 words + JSON envelope + per-article
+    # citations) headroom on every provider. 1500 caused Groq's llama-3.1-8b
+    # to truncate mid-JSON; LiteLLM then surfaced it as
+    # "max completion tokens reached before generating a valid document".
+    max_tokens: int = 4000
 
 
 class LLMClient:
@@ -51,8 +55,15 @@ class LLMClient:
                 f"methods (search/ingest/timeline) instead."
             )
 
-    def complete_json(self, prompt: str) -> dict[str, Any]:
-        """Send a single-shot chat completion and parse the JSON body."""
+    def complete_json(self, prompt: str, *, retries: int = 1) -> dict[str, Any]:
+        """Send a single-shot chat completion and parse the JSON body.
+
+        Retries once by default on JSON-validation failures and on parse
+        errors — small open-source models (Groq Llama 3.1 8B, etc.) sometimes
+        emit malformed JSON or truncate mid-document even with
+        ``response_format``. One additional attempt resolves most cases in
+        practice without doubling latency for the common path.
+        """
         self._ensure_key()
         try:
             import litellm
@@ -64,15 +75,30 @@ class LLMClient:
             if "/" in self.config.model
             else f"{self.config.provider}/{self.config.model}"
         )
-        response = litellm.completion(
-            model=model_id,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-            response_format={"type": "json_object"},
-        )
-        body = response["choices"][0]["message"]["content"]
-        return _parse_json(body)
+
+        last_exc: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                response = litellm.completion(
+                    model=model_id,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=self.config.temperature,
+                    max_tokens=self.config.max_tokens,
+                    response_format={"type": "json_object"},
+                )
+                body = response["choices"][0]["message"]["content"]
+                return _parse_json(body)
+            except (json.JSONDecodeError, Exception) as exc:
+                last_exc = exc
+                logger.warning(
+                    "LLM JSON call failed (attempt %d/%d): %s",
+                    attempt + 1, retries + 1, exc,
+                )
+                if attempt == retries:
+                    raise
+        # unreachable
+        assert last_exc is not None
+        raise last_exc
 
 
 def _parse_json(body: str) -> dict[str, Any]:

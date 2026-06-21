@@ -65,6 +65,9 @@ packages = ["gnews_agent", "mcp_server"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: hits real networks/services (GNews, LLM providers, Chroma on disk)",
+]
 
 [tool.coverage.run]
 source = ["gnews_agent"]

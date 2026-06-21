@@ -225,13 +225,9 @@ class NewsMemory:
             ]
 
         embedding = self._embedder.embed([query])[0]
-        where: dict[str, Any] = {}
-        if country:
-            where["country"] = country
-        if language:
-            where["language"] = language
+        where = _build_where_clause(country=country, language=language)
         # Fetch a wider candidate window so post-filter still hits ``limit``.
-        candidates = self._vectors.query(embedding, k=max(limit * 3, limit), where=where or None)
+        candidates = self._vectors.query(embedding, k=max(limit * 3, limit), where=where)
         ids = [hit.article_id for hit in candidates]
         articles = self._sqlite.get_articles(ids)
 
@@ -272,7 +268,7 @@ class NewsMemory:
     def _since_iso(days: int | None) -> str | None:
         if days is None:
             return None
-        cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=days)
+        cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
         return cutoff.strftime("%Y-%m-%d")
 
     @staticmethod
@@ -327,9 +323,15 @@ class NewsMemory:
         *,
         days: int = 14,
         timeline: bool = False,
+        max_articles: int = 15,
     ) -> dict[str, Any]:
-        """Sentiment over the corpus for ``topic`` — optional day-by-day breakdown."""
-        articles = self.search(topic, days=days, limit=50)
+        """Sentiment over the corpus for ``topic`` — optional day-by-day breakdown.
+
+        Caps articles fed to the LLM at ``max_articles`` (default 15) to keep
+        the prompt small enough for small models (Groq llama-3.1-8b etc.) to
+        produce valid JSON within the token budget.
+        """
+        articles = self.search(topic, days=days, limit=max_articles)
         llm = self._get_llm()
         if timeline:
             return {
@@ -374,3 +376,22 @@ def _aggregate_overall(corpus_level: dict[str, Any]) -> dict[str, Any]:
         "score": corpus_level.get("score", 0.0),
         "rationale": corpus_level.get("rationale"),
     }
+
+
+def _build_where_clause(*, country: str | None, language: str | None) -> dict[str, Any] | None:
+    """Build a Chroma-compatible ``where`` filter.
+
+    Chroma requires ``$and`` to combine more than one field; a flat
+    ``{country, language}`` dict is rejected. Single-key filters pass
+    through as-is. Returns ``None`` when no filter is needed.
+    """
+    clauses: list[dict[str, Any]] = []
+    if country:
+        clauses.append({"country": country})
+    if language:
+        clauses.append({"language": language})
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
