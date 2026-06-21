@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS articles (
     url_hash        TEXT    NOT NULL UNIQUE,
     publisher_name  TEXT,
     publisher_href  TEXT,
-    published_date  TEXT,
+    published_date  TEXT,                  -- original publisher date string (may be RFC822)
+    published_at    TEXT,                  -- normalised ISO-8601 ("YYYY-MM-DDTHH:MM:SS") for sort/filter
     summary         TEXT,
     full_text       TEXT,
     country         TEXT,
@@ -23,7 +24,7 @@ CREATE TABLE IF NOT EXISTS articles (
     ingested_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_articles_topic ON articles(topic);
-CREATE INDEX IF NOT EXISTS idx_articles_date  ON articles(published_date);
+CREATE INDEX IF NOT EXISTS idx_articles_date  ON articles(published_at);
 CREATE INDEX IF NOT EXISTS idx_articles_lang  ON articles(language, country);
 
 CREATE TABLE IF NOT EXISTS dedup_index (

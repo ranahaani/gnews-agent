@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from gnews_agent.ingestion.deduplicator import composite_key, url_hash
+from gnews_agent.query import parse_date
 
 
 class SqliteStore:
@@ -81,14 +82,15 @@ class SqliteStore:
         caller (ingestion pipeline) should treat that as a dedup hit.
         """
         article_url_hash = url_hash(article["url"])
+        published_iso = self._iso_from(article.get("published_date"))
         with self.transaction() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO articles (
                     title, url, url_hash, publisher_name, publisher_href,
-                    published_date, summary, full_text, country, language, topic,
-                    embed_model, embed_dim
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    published_date, published_at, summary, full_text,
+                    country, language, topic, embed_model, embed_dim
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     article["title"],
@@ -97,6 +99,7 @@ class SqliteStore:
                     article.get("publisher_name"),
                     article.get("publisher_href"),
                     article.get("published_date"),
+                    published_iso,
                     article.get("summary"),
                     article.get("full_text"),
                     article.get("country"),
@@ -108,6 +111,11 @@ class SqliteStore:
             )
         return cur.lastrowid
 
+    @staticmethod
+    def _iso_from(raw: str | None) -> str | None:
+        parsed = parse_date(raw)
+        return parsed.strftime("%Y-%m-%dT%H:%M:%S") if parsed else None
+
     def get_article(self, article_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(
             "SELECT * FROM articles WHERE id = ?", (article_id,)
@@ -117,6 +125,82 @@ class SqliteStore:
     def count_articles(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM articles").fetchone()
         return int(row["n"])
+
+    def get_articles(self, ids: list[int]) -> dict[int, dict[str, Any]]:
+        """Hydrate the given article ids in a single round-trip."""
+        if not ids:
+            return {}
+        placeholders = ",".join("?" for _ in ids)
+        rows = self._conn.execute(
+            f"SELECT * FROM articles WHERE id IN ({placeholders})", ids  # noqa: S608 - ids are ints
+        ).fetchall()
+        return {int(r["id"]): dict(r) for r in rows}
+
+    def fts_search(
+        self,
+        query: str,
+        *,
+        limit: int = 20,
+        country: str | None = None,
+        language: str | None = None,
+        since_iso: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """SQLite FTS5 keyword-fallback search over title + summary + full_text."""
+        clauses = ["articles_fts MATCH ?"]
+        params: list[Any] = [query]
+        if country:
+            clauses.append("articles.country = ?")
+            params.append(country)
+        if language:
+            clauses.append("articles.language = ?")
+            params.append(language)
+        if since_iso:
+            clauses.append("articles.published_at >= ?")
+            params.append(since_iso)
+        where_sql = " AND ".join(clauses)
+        sql = f"""
+            SELECT articles.*, bm25(articles_fts) AS rank
+            FROM articles_fts
+            JOIN articles ON articles.id = articles_fts.rowid
+            WHERE {where_sql}
+            ORDER BY rank ASC
+            LIMIT ?
+        """
+        params.append(limit)
+        rows = self._conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def timeline(
+        self,
+        topic: str | None,
+        *,
+        start_iso: str | None = None,
+        end_iso: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Group-by-day count, optionally scoped to a topic and date range."""
+        clauses: list[str] = []
+        params: list[Any] = []
+        if topic:
+            clauses.append("topic = ?")
+            params.append(topic)
+        if start_iso:
+            clauses.append("coalesce(published_at, ingested_at) >= ?")
+            params.append(start_iso)
+        if end_iso:
+            clauses.append("coalesce(published_at, ingested_at) <= ?")
+            params.append(end_iso)
+        where_sql = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        sql = f"""
+            SELECT
+                substr(coalesce(published_at, ingested_at), 1, 10) AS day,
+                COUNT(*) AS count
+            FROM articles
+            {where_sql}
+            GROUP BY day
+            ORDER BY day ASC
+        """
+        rows = self._conn.execute(sql, params).fetchall()
+        return [{"date": r["day"], "count": int(r["count"])} for r in rows if r["day"]]
 
     # ---- crawl runs ------------------------------------------------------
 

@@ -5,6 +5,7 @@ left as ``NotImplementedError`` stubs that point at the responsible stage.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 import sqlite3
 import time
@@ -14,6 +15,7 @@ from gnews_agent.config import NewsMemoryConfig
 from gnews_agent.ingestion.embedder import Embedder, make_embedder
 from gnews_agent.ingestion.enricher import enriched_text
 from gnews_agent.ingestion.fetcher import Fetcher
+from gnews_agent.query import blend, parse_date, recency_score
 from gnews_agent.storage.sqlite_store import SqliteStore
 from gnews_agent.storage.vector_store import VectorStore, make_vector_store
 
@@ -182,11 +184,104 @@ class NewsMemory:
     # later-stage stubs — fail loudly until wired up
     # ------------------------------------------------------------------
 
-    def search(self, query: str, **kwargs: Any) -> list[dict[str, Any]]:
-        raise NotImplementedError("NewsMemory.search lands in Stage 2")
+    # ------------------------------------------------------------------
+    # query
+    # ------------------------------------------------------------------
 
-    def timeline(self, topic: str, **kwargs: Any) -> list[dict[str, Any]]:
-        raise NotImplementedError("NewsMemory.timeline lands in Stage 2")
+    def search(
+        self,
+        query: str,
+        *,
+        days: int | None = None,
+        country: str | None = None,
+        language: str | None = None,
+        semantic: bool = True,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Semantic search with metadata filter + recency-blended re-rank.
+
+        Falls back to SQLite FTS5 keyword search when ``semantic=False`` or
+        when the configured vector store reports zero rows (cold cache).
+        """
+        since_iso = self._since_iso(days)
+        wants_vector = semantic and self._vectors.count() > 0
+        if not wants_vector:
+            rows = self._sqlite.fts_search(
+                query,
+                limit=limit,
+                country=country,
+                language=language,
+                since_iso=since_iso,
+            )
+            return [
+                {**self._row_to_article(row), "score": 0.0, "search_mode": "keyword"}
+                for row in rows
+            ]
+
+        embedding = self._embedder.embed([query])[0]
+        where: dict[str, Any] = {}
+        if country:
+            where["country"] = country
+        if language:
+            where["language"] = language
+        # Fetch a wider candidate window so post-filter still hits ``limit``.
+        candidates = self._vectors.query(embedding, k=max(limit * 3, limit), where=where or None)
+        ids = [hit.article_id for hit in candidates]
+        articles = self._sqlite.get_articles(ids)
+
+        results: list[dict[str, Any]] = []
+        for hit in candidates:
+            row = articles.get(hit.article_id)
+            if row is None:
+                continue
+            if since_iso and (row.get("published_at") or "") < since_iso:
+                continue
+            published = parse_date(row.get("published_at") or row.get("published_date"))
+            score = blend(hit.score, recency_score(published))
+            results.append(
+                {**self._row_to_article(row), "score": score, "search_mode": "semantic"}
+            )
+
+        results.sort(key=lambda r: r["score"], reverse=True)
+        return results[:limit]
+
+    def timeline(
+        self,
+        topic: str | None = None,
+        *,
+        days: int | None = None,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Day-by-day article counts for ``topic`` (keyless, SQL only)."""
+        start_iso = start or self._since_iso(days)
+        end_iso = end
+        return self._sqlite.timeline(topic, start_iso=start_iso, end_iso=end_iso)
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _since_iso(days: int | None) -> str | None:
+        if days is None:
+            return None
+        cutoff = _dt.datetime.utcnow() - _dt.timedelta(days=days)
+        return cutoff.strftime("%Y-%m-%d")
+
+    @staticmethod
+    def _row_to_article(row: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "url": row["url"],
+            "publisher": row.get("publisher_name"),
+            "published_date": row.get("published_date"),
+            "summary": row.get("summary"),
+            "country": row.get("country"),
+            "language": row.get("language"),
+            "topic": row.get("topic"),
+        }
 
     def brief(self, topic: str, **kwargs: Any) -> dict[str, Any]:
         raise NotImplementedError("NewsMemory.brief lands in Stage 3")
