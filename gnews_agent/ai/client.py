@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -96,9 +98,38 @@ class LLMClient:
                 )
                 if attempt == retries:
                     raise
+                wait = _retry_delay(exc)
+                if wait:
+                    logger.info("backing off %.1fs before retry", wait)
+                    time.sleep(wait)
         # unreachable
         assert last_exc is not None
         raise last_exc
+
+
+_RATE_LIMIT_SECONDS_RE = re.compile(r"try again in ([\d.]+)\s*s", re.IGNORECASE)
+
+
+def _retry_delay(exc: Exception) -> float:
+    """Pick a sensible backoff for the given exception.
+
+    Per-minute token rate limits (Groq free tier returns "try again in 45.8s")
+    are honoured by parsing the suggested wait out of the error message and
+    sleeping a couple of seconds past it so the next attempt lands in a fresh
+    bucket. Other transient errors (parse failures, generic provider errors)
+    fall through to a short fixed delay.
+    """
+    text = str(exc).lower()
+    is_rate_limited = "rate" in text and "limit" in text
+    if is_rate_limited:
+        match = _RATE_LIMIT_SECONDS_RE.search(text)
+        if match:
+            try:
+                return float(match.group(1)) + 2.0
+            except ValueError:
+                pass
+        return 30.0  # conservative default when the provider doesn't say
+    return 1.0
 
 
 def _parse_json(body: str) -> dict[str, Any]:

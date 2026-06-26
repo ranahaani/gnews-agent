@@ -41,18 +41,40 @@ _load_env()
 
 _PROVIDER_PREF = [
     # (provider, env var, default model when this provider wins)
-    ("groq",      "GROQ_API_KEY",      "groq/llama-3.1-8b-instant"),
+    # Anthropic first: claude-3-5-haiku has ~50k TPM on the free tier vs
+    # Groq's 6k on llama-3.1-8b — the full integration suite easily
+    # blows past 6k TPM when brief() + sentiment() share a minute.
     ("anthropic", "ANTHROPIC_API_KEY", "anthropic/claude-3-5-haiku-latest"),
     ("openai",    "OPENAI_API_KEY",    "openai/gpt-4o-mini"),
     ("gemini",    "GEMINI_API_KEY",    "gemini/gemini-1.5-flash"),
+    ("groq",      "GROQ_API_KEY",      "groq/llama-3.1-8b-instant"),
 ]
+
+
+def _provider_is_live(model: str) -> bool:
+    """Tiny completion to verify the key is actually valid.
+
+    Skips dead/rotated keys so the suite doesn't hard-fail when ``.env``
+    has stale credentials for one provider while another is fine.
+    """
+    try:
+        import litellm
+        litellm.completion(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=1,
+            temperature=0,
+        )
+        return True
+    except Exception:
+        return False
 
 
 def _selected_provider() -> tuple[str, str, str] | None:
     for provider, env, model in _PROVIDER_PREF:
-        if os.environ.get(env):
-            # litellm wants gemini's key under GEMINI_API_KEY which it already
-            # accepts; nothing more to do here.
+        if not os.environ.get(env):
+            continue
+        if _provider_is_live(model):
             return provider, env, model
     return None
 
@@ -61,5 +83,5 @@ def _selected_provider() -> tuple[str, str, str] | None:
 def llm_provider_choice():
     pick = _selected_provider()
     if pick is None:
-        pytest.skip("no LLM provider key set (looked for GROQ/ANTHROPIC/OPENAI/GEMINI)")
+        pytest.skip("no live LLM provider key (probed ANTHROPIC/OPENAI/GEMINI/GROQ)")
     return pick

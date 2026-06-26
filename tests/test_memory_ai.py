@@ -1,6 +1,8 @@
 """brief() + sentiment() — LLM mocked, no network."""
 from __future__ import annotations
 
+import datetime as _dt
+
 import pytest
 
 from gnews_agent import NewsMemory, NewsMemoryConfig
@@ -45,11 +47,15 @@ def _make_memory(tmp_path, *, llm):
         llm_provider="ollama",
         llm_model="stub",
     )
+    # Date the fixture article as "today" so days-filtered search always
+    # returns it — otherwise the test rots whenever the clock advances past
+    # the hard-coded date.
+    today_rfc822 = _dt.datetime.now(_dt.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
     items = [{
         "title": "OpenAI ships GPT-5",
         "url": "https://reuters.com/openai-gpt5",
         "description": "OpenAI today announced GPT-5.",
-        "published date": "Mon, 16 Jun 2026 12:00:00 GMT",
+        "published date": today_rfc822,
         "publisher": {"title": "Reuters", "href": "https://reuters.com"},
     }]
     vectors = ScriptedVectorStore()
@@ -127,11 +133,12 @@ def test_brief_without_llm_key_raises(tmp_path, monkeypatch):
         llm_provider="openai",   # provider needs OPENAI_API_KEY
         llm_model="gpt-4o-mini",
     )
+    today_rfc822 = _dt.datetime.now(_dt.timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
     items = [{
         "title": "OpenAI ships GPT-5",
         "url": "https://reuters.com/openai-gpt5",
         "description": "OpenAI today announced GPT-5.",
-        "published date": "Mon, 16 Jun 2026 12:00:00 GMT",
+        "published date": today_rfc822,
         "publisher": {"title": "Reuters", "href": "https://reuters.com"},
     }]
     vectors = ScriptedVectorStore()
