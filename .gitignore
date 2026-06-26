@@ -45,3 +45,15 @@ lance/
 
 # Build artifacts that crept in earlier (parent dir had these as wheels)
 *.whl
+
+# Docs / design artefacts — kept on disk locally, not in git.
+# Only README.md ships in the repo.
+*.md
+!README.md
+*.html
+PRD.md
+system-design/
+docs/
+
+# Local Claude Code state (scheduled tasks, settings)
+.claude/
