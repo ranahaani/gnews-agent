@@ -52,8 +52,8 @@ jobs:
       - name: Publish package distributions to PyPI
         if: steps.check.outputs.changed == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+        # OIDC trusted publishing — no token needed.
+        # Pending publisher configured at https://pypi.org/manage/account/publishing/
 
       - name: Skip — version unchanged
         if: steps.check.outputs.changed == 'false'
