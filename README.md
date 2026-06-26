@@ -1,13 +1,8 @@
 # gnews-agent
 
-> Persistent, semantic, evaluated news intelligence layer for AI agents — built on top of [GNews](https://github.com/ranahaani/GNews) (106k+ monthly PyPI downloads, 141 countries, 41 languages).
+> Persistent, semantic news intelligence layer for AI agents — built on top of [GNews](https://github.com/ranahaani/GNews) (106k+ monthly PyPI downloads, 141 countries, 41 languages).
 
-`/last30days` searches **what people say** (Reddit, X, YouTube, TikTok). `gnews-agent` searches **what journalism reports** (Reuters, BBC, AP, TechCrunch, and the 141-country Google News graph). Use them together for the complete picture.
-
-```
-/last30days OpenAI GPT-5     → social signal
-/gnews      OpenAI GPT-5     → published record
-```
+The journalism layer your AI agent is missing. Fetch published news from Reuters, BBC, AP, TechCrunch, and the 141-country Google News graph, dedup it, embed it, store it persistently, and query it semantically — over a Python API, a CLI, or an MCP server that drops straight into Claude.
 
 ## What you get
 
@@ -15,8 +10,8 @@
 - Persistent SQLite + ChromaDB storage — no fetch-and-discard. Articles dedup across runs on `title-slug + publisher`, so Reuters and BBC covering the same event stay as two distinct rows (multi-outlet framings preserved).
 - Semantic vector search out of the box (sentence-transformers, 384-dim, no server, no sidecar).
 - LLM-cited briefs + sentiment via [LiteLLM](https://github.com/BerriAI/litellm) — OpenAI / Anthropic / Groq / Ollama, switchable by config.
-- FastMCP server (`gnews-agent serve`) — Claude Desktop, Cursor, Windsurf, LangGraph can call the tools directly.
-- Claude Code skill (`/gnews`) — installable from the marketplace, complements `/last30days`.
+- FastMCP server (`gnews-agent serve`) — Claude Desktop, Claude Code, Cursor, Windsurf, LangGraph can call the tools directly.
+- Claude Code skill (`/gnews`) — installable from the marketplace.
 
 ## Install
 
@@ -45,7 +40,9 @@ export GROQ_API_KEY=gsk_...
 # or run Ollama locally — no key needed
 ```
 
-## Three ways to use it
+See [`.env.example`](.env.example) for the full list.
+
+## Four ways to use it
 
 ### 1. Python library
 
@@ -75,24 +72,65 @@ gnews-agent serve --transport stdio
 
 All commands emit JSON to stdout by default. Add `--no-pretty` for one-line output (pipe through `jq` or feed to another agent).
 
-### 3. MCP server
+### 3. Claude Code (recommended)
 
-`gnews-agent serve --transport stdio` exposes five tools (`search_news`, `get_brief`, `get_sentiment`, `get_timeline`, `monitor_topic`) and three resources (`news://latest/{topic}`, `news://sentiment/{topic}`, `news://timeline/{topic}`).
+Two ways: wire it in as an MCP server (works everywhere Claude can call tools), or install the `/gnews` skill.
 
-Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or the Windows equivalent:
+**Option A — MCP server (works in any Claude product):**
+
+The fastest path inside the Claude Code CLI is a single command:
+
+```bash
+claude mcp add gnews-agent -- gnews-agent serve --transport stdio
+```
+
+Then in any Claude Code session, ask:
+
+> *"Use gnews-agent to ingest the latest reporting on OpenAI, then give me a cited brief on what changed this week."*
+
+Claude will call `search_news`, `get_brief`, `get_timeline`, `get_sentiment`, and `monitor_topic` directly. The five MCP tools and three resources (`news://latest/{topic}`, `news://sentiment/{topic}`, `news://timeline/{topic}`) become first-class to the model.
+
+For **Claude Desktop** (or any client that takes a `claude_desktop_config.json`), add this block instead:
 
 ```json
 {
   "mcpServers": {
     "gnews-agent": {
       "command": "gnews-agent",
-      "args": ["serve", "--transport", "stdio"]
+      "args": ["serve", "--transport", "stdio"],
+      "env": {
+        "ANTHROPIC_API_KEY": "sk-ant-...",
+        "GNEWS_AGENT_LLM_PROVIDER": "anthropic",
+        "GNEWS_AGENT_LLM_MODEL": "claude-3-5-haiku-latest"
+      }
     }
   }
 }
 ```
 
-Restart Claude Desktop and ask: *"Show me what journalism reported about OpenAI this week."*
+Restart the client and the same prompt works.
+
+**Option B — `/gnews` skill:**
+
+```
+/plugin marketplace add ranahaani/gnews-agent
+/gnews OpenAI this week
+/gnews Pakistan economy sentiment
+/gnews Tesla vs Rivian coverage last 30 days
+```
+
+The skill calls the same CLI under the hood, then formats the JSON into a citable brief. Requires `pip install gnews-agent` on the same machine.
+
+**Verify the wiring:**
+
+```bash
+# from anywhere
+gnews-agent stats              # should print {"total_articles": 0, ...}
+gnews-agent serve --transport stdio < /dev/null
+# should print FastMCP handshake bytes; Ctrl-C to exit
+```
+
+If `gnews-agent` isn't on `$PATH` after `pip install`, use the absolute path in the MCP config (`which gnews-agent`).
 
 ### 4. Docker (self-host / team)
 
@@ -117,15 +155,26 @@ The image pre-downloads `all-MiniLM-L6-v2` at build time so first ingest doesn't
 
 | Var | Meaning |
 |---|---|
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` | Provider key for `brief`/`sentiment`. Pick the one that matches `--llm-provider`. |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GROQ_API_KEY` / `GEMINI_API_KEY` | Provider key for `brief`/`sentiment`. Pick the one that matches `--llm-provider`. |
 | `GNEWS_AGENT_LLM_PROVIDER` | Default `--llm-provider` flag value. |
 | `GNEWS_AGENT_LLM_MODEL` | Default `--llm-model` flag value. |
 | `GNEWS_AGENT_HOME` | Used by the Docker image as the persistence root (mounts `/data`). |
 
 ## Status
 
-- **v0.1.0** — Library + CLI + MCP server + Claude Code skill scaffold. End-to-end ingest → search → brief works against a real `OPENAI_API_KEY`. 77/77 tests pass.
+- **v0.1.0** — Library + CLI + MCP server + Claude Code skill scaffold. End-to-end ingest → search → brief works against a real LLM key. 83 unit + 24 integration tests pass.
 - **v2 deferred** — DeepEval `FaithfulnessMetric`, Langfuse tracing, CI eval gate, story clustering, `get_entities` MCP tool, Telegram/Slack/Email alert channels, LanceDB + Qdrant backends, multi-language summaries.
+
+## Pairs well with `/last30days`
+
+`/last30days` searches **what people say** (Reddit, X, YouTube, TikTok, Hacker News). `gnews-agent` searches **what journalism reports** (Reuters, BBC, AP, TechCrunch). They are complementary — different signals from different sources:
+
+```
+/last30days OpenAI GPT-5     → social signal
+/gnews      OpenAI GPT-5     → published record
+```
+
+Install both and ask Claude to combine them for the full picture.
 
 ## License
 
