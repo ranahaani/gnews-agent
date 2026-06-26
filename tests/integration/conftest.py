@@ -3,8 +3,9 @@
 These tests hit real services — GNews RSS, the sentence-transformers
 model download, an LLM provider — so they are marked ``integration`` and
 skipped unless ``-m integration`` (or ``-m "integration or not integration"``)
-is passed to pytest. They auto-load ``~/ai-me/.env`` so the user's
-existing keys (ANTHROPIC_API_KEY, GROQ_API_KEY, GEMINI_API_KEY) flow in.
+is passed to pytest. They auto-load the nearest ``.env`` walking up from
+this file so any of ANTHROPIC_API_KEY, OPENAI_API_KEY, GROQ_API_KEY, or
+GEMINI_API_KEY can be picked up without exporting it in the shell.
 """
 from __future__ import annotations
 
