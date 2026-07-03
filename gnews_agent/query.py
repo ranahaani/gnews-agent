@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import datetime as _dt
 import math
-from typing import Any
 
 
 def parse_date(value: str | None) -> _dt.datetime | None:

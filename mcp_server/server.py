@@ -8,12 +8,12 @@ intentionally absent — deferred to v2 per the locked PRD decision.
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from gnews_agent import NewsMemory
 from gnews_agent.exceptions import WebhookSecurityError
 from mcp_server.security import validate_webhook
-
 
 logger = logging.getLogger(__name__)
 

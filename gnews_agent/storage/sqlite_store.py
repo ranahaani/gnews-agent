@@ -7,10 +7,11 @@ a working DB on first call without a migration step.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from gnews_agent.ingestion.deduplicator import composite_key, url_hash
 from gnews_agent.query import parse_date
@@ -240,7 +241,7 @@ class SqliteStore:
 
 
 # avoid a circular re-import — re-export from the deduplicator module
-from gnews_agent.ingestion.deduplicator import (  # noqa: E402
+from gnews_agent.ingestion.deduplicator import (  # noqa: E402, I001
     publisher_norm as _publisher_norm,
     title_slug as _title_slug,
 )

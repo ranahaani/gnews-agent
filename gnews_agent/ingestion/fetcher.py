@@ -20,7 +20,6 @@ from typing import Any
 from gnews import GNews
 from gnews.exceptions import RateLimitError
 
-
 logger = logging.getLogger(__name__)
 
 

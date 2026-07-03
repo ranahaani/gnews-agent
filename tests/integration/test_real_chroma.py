@@ -6,7 +6,6 @@ import pytest
 from gnews_agent.exceptions import EmbeddingDimMismatchError
 from gnews_agent.storage.backends.chroma import ChromaVectorStore
 
-
 pytestmark = pytest.mark.integration
 
 

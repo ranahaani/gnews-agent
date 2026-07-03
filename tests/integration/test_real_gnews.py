@@ -5,7 +5,6 @@ import pytest
 
 from gnews_agent.ingestion.fetcher import Fetcher
 
-
 pytestmark = pytest.mark.integration
 
 
