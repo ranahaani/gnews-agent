@@ -5,7 +5,6 @@ import pytest
 
 from gnews_agent import NewsMemory, NewsMemoryConfig
 
-
 pytestmark = pytest.mark.integration
 
 

@@ -49,9 +49,9 @@ def test_config_defaults_resolve(tmp_path, monkeypatch):
 
 def test_news_memory_unwired_methods_raise(tmp_path):
     """Stage 2/3/5 methods still raise; ingest/stats are implemented (Stage 1)."""
-    from tests.conftest import FakeEmbedder, FakeVectorStore
-    from gnews_agent.storage.sqlite_store import SqliteStore
     from gnews_agent.ingestion.fetcher import Fetcher
+    from gnews_agent.storage.sqlite_store import SqliteStore
+    from tests.conftest import FakeEmbedder, FakeVectorStore
     from tests.test_fetcher import FakeGNews
 
     cfg = NewsMemoryConfig(

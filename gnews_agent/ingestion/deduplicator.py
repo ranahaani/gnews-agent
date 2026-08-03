@@ -17,7 +17,6 @@ import re
 import unicodedata
 from urllib.parse import urlsplit, urlunsplit
 
-
 _WHITESPACE_RE = re.compile(r"\s+")
 _NON_WORD_DASH_RE = re.compile(r"[^a-z0-9\-]+")
 _MULTI_DASH_RE = re.compile(r"-{2,}")

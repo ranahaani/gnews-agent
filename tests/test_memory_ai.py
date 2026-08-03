@@ -11,7 +11,6 @@ from gnews_agent.exceptions import LLMKeyMissingError
 from gnews_agent.ingestion.fetcher import Fetcher
 from gnews_agent.storage.sqlite_store import SqliteStore
 from gnews_agent.storage.vector_store import VectorHit
-
 from tests.conftest import FakeEmbedder, FakeVectorStore
 from tests.test_fetcher import FakeGNews
 

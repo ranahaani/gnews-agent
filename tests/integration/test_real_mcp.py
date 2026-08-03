@@ -11,7 +11,6 @@ import pytest
 from gnews_agent import NewsMemory, NewsMemoryConfig
 from mcp_server import server as mcp_server
 
-
 pytestmark = pytest.mark.integration
 
 

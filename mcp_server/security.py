@@ -16,7 +16,6 @@ from urllib.parse import urlsplit
 
 from gnews_agent.exceptions import WebhookSecurityError
 
-
 # Cloud metadata + AWS link-local + GCP/Azure metadata.
 _METADATA_HOSTS = frozenset({
     "169.254.169.254",

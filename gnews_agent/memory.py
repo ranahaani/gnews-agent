@@ -23,7 +23,6 @@ from gnews_agent.query import blend, parse_date, recency_score
 from gnews_agent.storage.sqlite_store import SqliteStore
 from gnews_agent.storage.vector_store import VectorStore, make_vector_store
 
-
 logger = logging.getLogger(__name__)
 
 

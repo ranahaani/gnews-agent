@@ -5,7 +5,6 @@ import pytest
 
 from gnews_agent.ingestion.embedder import SentenceTransformerEmbedder
 
-
 pytestmark = pytest.mark.integration
 
 
@@ -34,7 +33,7 @@ def test_semantically_similar_sentences_score_high(embedder):
         "OpenAI unveiled GPT-5 this morning",
         "The Boston Celtics won the basketball game",
     ])
-    def dot(a, b): return sum(x * y for x, y in zip(a, b))
+    def dot(a, b): return sum(x * y for x, y in zip(a, b, strict=True))
     near_sim = dot(base, near)
     far_sim = dot(base, far)
     assert near_sim > far_sim

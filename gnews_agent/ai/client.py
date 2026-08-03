@@ -15,7 +15,6 @@ from typing import Any
 
 from gnews_agent.exceptions import LLMKeyMissingError
 
-
 logger = logging.getLogger(__name__)
 
 
