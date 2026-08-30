@@ -113,10 +113,11 @@ class NewsMemory:
                 error_message=result.error,
                 duration_seconds=time.monotonic() - started,
             )
-            return {"fetched": 0, "new": 0, "skipped": 0, "status": "rate_limited"}
+            return {"fetched": 0, "new": 0, "skipped": 0, "revised": 0, "status": "rate_limited"}
 
         new_count = 0
         skipped = 0
+        revised = 0
         for raw in result.articles:
             if not raw.get("title") or not raw.get("url"):
                 continue
@@ -124,6 +125,14 @@ class NewsMemory:
             raw.setdefault("language", self.config.language)
             raw["embed_model"] = self._embedder.embed_model
             raw["embed_dim"] = self._embedder.embed_dim
+
+            existing_id = self._sqlite.get_article_id_by_url(raw["url"])
+            if existing_id is not None:
+                if self._revise_existing(existing_id, raw):
+                    revised += 1
+                else:
+                    skipped += 1
+                continue
 
             if self._sqlite.is_duplicate(raw["title"], raw.get("publisher_name")):
                 skipped += 1
@@ -133,26 +142,20 @@ class NewsMemory:
             try:
                 article_id = self._sqlite.insert_article(raw)
             except sqlite3.IntegrityError:
-                # url_hash UNIQUE backstop fired — a different headline shares the URL.
-                skipped += 1
+                collided = self._sqlite.get_article_id_by_url(raw["url"])
+                if collided is not None and self._revise_existing(collided, raw):
+                    revised += 1
+                else:
+                    skipped += 1
                 continue
 
-            text = enriched_text(raw)
-            embedding = self._embedder.embed([text])[0]
-            self._vectors.upsert(
+            self._sqlite.record_observation(
                 article_id,
-                embedding,
-                metadata={
-                    "topic": raw.get("topic"),
-                    "country": raw.get("country"),
-                    "language": raw.get("language"),
-                    "publisher": raw.get("publisher_name"),
-                    "published_date": raw.get("published_date"),
-                    "title": raw.get("title"),
-                    "url": raw.get("url"),
-                    "document": text,
-                },
+                title=raw["title"],
+                summary=raw.get("summary"),
+                url=raw["url"],
             )
+            self._store_vector(article_id, raw)
             self._sqlite.record_seen(raw["title"], raw.get("publisher_name"), article_id)
             new_count += 1
 
@@ -168,8 +171,48 @@ class NewsMemory:
             "fetched": len(result.articles),
             "new": new_count,
             "skipped": skipped,
+            "revised": revised,
             "status": "success",
         }
+
+    def _revise_existing(self, article_id: int, raw: dict[str, Any]) -> bool:
+        """Record a new observation when the stored text changed. Returns True on change."""
+        changed = self._sqlite.record_observation(
+            article_id,
+            title=raw["title"],
+            summary=raw.get("summary"),
+            url=raw["url"],
+        )
+        if not changed:
+            self._sqlite.record_seen(raw["title"], raw.get("publisher_name"), article_id)
+            return False
+        self._sqlite.update_article(
+            article_id,
+            title=raw["title"],
+            summary=raw.get("summary"),
+            url=raw["url"],
+        )
+        self._store_vector(article_id, raw)
+        self._sqlite.record_seen(raw["title"], raw.get("publisher_name"), article_id)
+        return True
+
+    def _store_vector(self, article_id: int, raw: dict[str, Any]) -> None:
+        text = enriched_text(raw)
+        embedding = self._embedder.embed([text])[0]
+        self._vectors.upsert(
+            article_id,
+            embedding,
+            metadata={
+                "topic": raw.get("topic"),
+                "country": raw.get("country"),
+                "language": raw.get("language"),
+                "publisher": raw.get("publisher_name"),
+                "published_date": raw.get("published_date"),
+                "title": raw.get("title"),
+                "url": raw.get("url"),
+                "document": text,
+            },
+        )
 
     # ------------------------------------------------------------------
     # introspection
@@ -258,6 +301,24 @@ class NewsMemory:
         start_iso = start or self._since_iso(days)
         end_iso = end
         return self._sqlite.timeline(topic, start_iso=start_iso, end_iso=end_iso)
+
+    def changes(
+        self,
+        topic: str | None = None,
+        *,
+        days: int = 1,
+    ) -> dict[str, Any]:
+        """Articles first seen vs rewritten since ``days`` ago.
+
+        URL is story identity: a rewritten headline on the same canonical URL
+        shows up under ``revised``, not ``new``.
+        """
+        since_iso = self._since_iso(days)
+        payload = self._sqlite.changes(topic=topic, since_iso=since_iso)
+        payload["since"] = since_iso
+        payload["days"] = days
+        payload["topic"] = topic
+        return payload
 
     # ------------------------------------------------------------------
     # helpers

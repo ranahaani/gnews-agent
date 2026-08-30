@@ -36,6 +36,15 @@ def _load_env() -> None:
 _load_env()
 
 
+def skip_if_no_live_articles(count: int, *, topic: str = "artificial intelligence") -> None:
+    """Google News RSS is empty from some CI IPs and during brief outages.
+
+    Live tests should skip, not fail — an empty feed is not a product regression.
+    """
+    if count <= 0:
+        pytest.skip(f"Google News RSS returned no articles for {topic!r}")
+
+
 # ---------------------------------------------------------------------------
 # provider selection — pick whichever LLM key is set, prefer fastest+cheapest
 # ---------------------------------------------------------------------------

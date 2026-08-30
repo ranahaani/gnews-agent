@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from gnews_agent import NewsMemory, NewsMemoryConfig
+from tests.integration.conftest import skip_if_no_live_articles
 
 pytestmark = pytest.mark.integration
 
@@ -22,13 +23,13 @@ def memory(tmp_path_factory):
         max_fetch_results=10,
         fetch_min_interval_seconds=0,
     )
-    return NewsMemory(config=cfg)
+    mem = NewsMemory(config=cfg)
+    result = mem.ingest("artificial intelligence")
+    skip_if_no_live_articles(result["artificial intelligence"]["fetched"])
+    return mem
 
 
 def test_ingest_writes_real_articles(memory):
-    result = memory.ingest("artificial intelligence")
-    assert result["artificial intelligence"]["status"] == "success"
-    assert result["artificial intelligence"]["new"] >= 1
     stats = memory.stats()
     assert stats["total_articles"] >= 1
     assert stats["vector_count"] >= 1
@@ -42,9 +43,11 @@ def test_second_ingest_dedups(memory):
     before = memory.stats()["total_articles"]
     result = memory.ingest("artificial intelligence")
     after = memory.stats()["total_articles"]
-    # Second call must not add the same articles back.
+    # Second call must not grow the store. Unchanged rows are skipped;
+    # rewritten headlines on the same URL count as revised, not new.
     assert after == before, f"second ingest grew store from {before} to {after}"
-    assert result["artificial intelligence"]["skipped"] >= 1
+    row = result["artificial intelligence"]
+    assert row["skipped"] + row["revised"] >= 1
 
 
 def test_semantic_search_returns_real_hits(memory):
