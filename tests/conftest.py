@@ -34,6 +34,7 @@ class FakeVectorStore:
         self.records: list[dict[str, Any]] = []
 
     def upsert(self, article_id: int, embedding: list[float], metadata: dict[str, Any]) -> None:
+        self.records = [r for r in self.records if r["article_id"] != article_id]
         self.records.append({"article_id": article_id, "embedding": embedding, "metadata": metadata})
 
     def query(self, embedding, *, k=10, where=None):

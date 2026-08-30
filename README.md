@@ -44,8 +44,8 @@ gnews-agent stats              # → {"total_articles": 0, ...}
 
 ## Usage
 
-The library exposes the same six capabilities through every surface:
-`ingest`, `search`, `timeline`, `brief`, `sentiment`, `stats`. Pick the
+The library exposes the same capabilities through every surface:
+`ingest`, `search`, `timeline`, `changes`, `brief`, `sentiment`, `stats`. Pick the
 surface that matches how the rest of your system already works.
 
 ### CLI
@@ -53,6 +53,7 @@ surface that matches how the rest of your system already works.
 ```bash
 gnews-agent ingest "OpenAI" --method get_news
 gnews-agent search "GPT-5 safety" --days 7 --limit 5
+gnews-agent changes "OpenAI" --days 1
 gnews-agent brief  "OpenAI this week" --days 7
 gnews-agent sentiment "Tesla" --days 14 --timeline
 gnews-agent timeline  "OpenAI" --days 30
@@ -65,8 +66,8 @@ Every command emits JSON to stdout. Use `--no-pretty` for one-line output
 
 ### MCP server
 
-`gnews-agent serve` exposes five tools — `search_news`, `get_brief`,
-`get_sentiment`, `get_timeline`, `monitor_topic` — and three resources —
+`gnews-agent serve` exposes six tools — `search_news`, `get_brief`,
+`get_sentiment`, `get_timeline`, `get_changes`, `monitor_topic` — and three resources —
 `news://latest/{topic}`, `news://sentiment/{topic}`,
 `news://timeline/{topic}`. Works in any MCP client.
 
@@ -135,6 +136,7 @@ memory = NewsMemory()                              # SQLite + Chroma, persistent
 memory.ingest("OpenAI", method="get_news")         # fetch + dedup + embed + store
 results = memory.search("GPT-5 safety", days=7)    # semantic re-ranked by recency
 timeline = memory.timeline("OpenAI", days=30)      # SQL-only
+delta = memory.changes("OpenAI", days=1)           # new vs rewritten since yesterday
 brief = memory.brief("OpenAI this week", days=7)   # cited LLM summary
 sentiment = memory.sentiment("Tesla", days=14)
 print(memory.stats())
@@ -193,6 +195,13 @@ ingest doesn't pay the ~80MB cold-start.
   URL variants (locale params, tracking suffixes, redirector vs
   resolved). Title-slug + publisher catches those without merging
   legitimately distinct outlets.
+- **Story identity is the canonical URL.** `articles` holds the latest
+  view; `article_observations` is an immutable snapshot of every distinct
+  title+description we actually fetched. A rewritten or A/B-tested
+  headline on the same URL is a revision, not a new row and not a
+  silent skip. `NewsMemory.changes()` (CLI `gnews-agent changes`, MCP
+  `get_changes`) reports new vs revised in a window so a writer agent
+  can see what moved since yesterday.
 - **No semantic cosine dedup at ingestion.** Reuters and BBC reporting
   the same event are kept as separate rows. Cosine similarity is
   reserved for query-time re-ranking inside `brief()`.

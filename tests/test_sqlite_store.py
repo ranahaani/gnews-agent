@@ -43,8 +43,30 @@ def test_schema_applied_on_connect(store):
             "SELECT name FROM sqlite_master WHERE type IN ('table','virtual')"
         )
     }
-    assert {"articles", "dedup_index", "crawl_runs"}.issubset(names)
+    assert {"articles", "dedup_index", "crawl_runs", "article_observations"}.issubset(names)
     assert "articles_fts" in names
+
+
+def test_connect_backfills_observations_for_existing_articles(tmp_path):
+    """Upgrade path: a v0.1.0 DB has articles but no observation rows.
+
+    Without a baseline snapshot, the next ingest of the same URL would look
+    like a revision. Connecting to the file must seed one observation per
+    article from the current latest-view row.
+    """
+    db = tmp_path / "news.db"
+    store = SqliteStore(db)
+    article_id = store.insert_article(_article())
+    store._conn.execute("DELETE FROM article_observations")
+    store._conn.commit()
+    assert store.list_observations(article_id) == []
+    store.close()
+
+    reopened = SqliteStore(db)
+    rows = reopened.list_observations(article_id)
+    assert len(rows) == 1
+    assert rows[0]["title"] == "OpenAI ships GPT-5"
+    reopened.close()
 
 
 def test_insert_and_get_article(store):
@@ -111,3 +133,109 @@ def test_dedup_does_not_collapse_reuters_and_bbc(store):
     store.record_seen("OpenAI ships GPT-5", "BBC News", bbc_id)
 
     assert store.count_articles() == 2
+
+
+def test_lookup_article_by_url(store):
+    article_id = store.insert_article(_article())
+    found = store.get_article_id_by_url("https://reuters.com/article/openai-gpt5")
+    assert found == article_id
+    assert store.get_article_id_by_url("https://example.com/missing") is None
+
+
+def test_first_observation_is_recorded(store):
+    article_id = store.insert_article(_article())
+    created = store.record_observation(
+        article_id,
+        title="OpenAI ships GPT-5",
+        summary="OpenAI today announced the long-anticipated GPT-5.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    assert created is True
+    rows = store.list_observations(article_id)
+    assert len(rows) == 1
+    assert rows[0]["title"] == "OpenAI ships GPT-5"
+
+
+def test_identical_observation_is_idempotent(store):
+    article_id = store.insert_article(_article())
+    kwargs = dict(
+        article_id=article_id,
+        title="OpenAI ships GPT-5",
+        summary="OpenAI today announced the long-anticipated GPT-5.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    assert store.record_observation(**kwargs) is True
+    assert store.record_observation(**kwargs) is False
+    assert len(store.list_observations(article_id)) == 1
+
+
+def test_headline_rewrite_appends_observation(store):
+    article_id = store.insert_article(_article())
+    store.record_observation(
+        article_id,
+        title="OpenAI ships GPT-5",
+        summary="OpenAI today announced the long-anticipated GPT-5.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    changed = store.record_observation(
+        article_id,
+        title="OpenAI unveils GPT-5",
+        summary="OpenAI today announced the long-anticipated GPT-5.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    assert changed is True
+    rows = store.list_observations(article_id)
+    assert [r["title"] for r in rows] == ["OpenAI ships GPT-5", "OpenAI unveils GPT-5"]
+
+
+def test_update_article_snapshot(store):
+    article_id = store.insert_article(_article())
+    store.update_article(
+        article_id,
+        title="OpenAI unveils GPT-5",
+        summary="Updated lede.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    fetched = store.get_article(article_id)
+    assert fetched["title"] == "OpenAI unveils GPT-5"
+    assert fetched["summary"] == "Updated lede."
+    assert store.count_articles() == 1
+
+
+def test_changes_splits_new_from_revised(store):
+    first = store.insert_article(_article())
+    store.record_observation(
+        first,
+        title="OpenAI ships GPT-5",
+        summary="OpenAI today announced the long-anticipated GPT-5.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    store._conn.execute(
+        "UPDATE article_observations SET fetched_at = '2026-01-01 00:00:00' WHERE article_id = ?",
+        (first,),
+    )
+    store._conn.commit()
+
+    store.record_observation(
+        first,
+        title="OpenAI unveils GPT-5",
+        summary="OpenAI today announced the long-anticipated GPT-5.",
+        url="https://reuters.com/article/openai-gpt5",
+    )
+    second = store.insert_article(
+        _article(title="Anthropic ships Claude 5", url="https://bbc.co.uk/claude-5")
+    )
+    store.record_observation(
+        second,
+        title="Anthropic ships Claude 5",
+        summary="Anthropic announced Claude 5.",
+        url="https://bbc.co.uk/claude-5",
+    )
+
+    payload = store.changes(since_iso="2026-06-01")
+    new_ids = {row["id"] for row in payload["new"]}
+    revised_ids = {row["id"] for row in payload["revised"]}
+    assert second in new_ids
+    assert first in revised_ids
+    assert first not in new_ids
+    assert payload["revised"][0]["previous_title"] == "OpenAI ships GPT-5"

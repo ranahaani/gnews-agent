@@ -73,6 +73,11 @@ def get_timeline(
     return _get_memory().timeline(topic, start=start_date, end=end_date, days=days)
 
 
+def get_changes(topic: str | None = None, days: int = 1) -> dict[str, Any]:
+    """Articles first seen vs rewritten in the last ``days`` days."""
+    return _get_memory().changes(topic, days=days)
+
+
 def monitor_topic(
     topics: list[str],
     threshold: int = 5,
@@ -145,6 +150,11 @@ def build_app():
     ) -> list[dict[str, Any]]:
         """Day-by-day article counts (keyless)."""
         return get_timeline(topic, start_date, end_date, days)
+
+    @mcp.tool(name="get_changes")
+    def _get_changes(topic: str | None = None, days: int = 1) -> dict[str, Any]:
+        """Articles first seen vs rewritten in the last ``days`` days."""
+        return get_changes(topic, days)
 
     @mcp.tool(name="monitor_topic")
     def _monitor_topic(
