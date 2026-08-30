@@ -99,6 +99,19 @@ def test_batch_ingest(tmp_config):
     assert memory.stats()["total_articles"] == 1
 
 
+def test_empty_fetch_is_success_with_zero_counts(tmp_config):
+    memory, _ = _make_memory(tmp_config, items=[])
+    result = memory.ingest("OpenAI")
+    assert result["OpenAI"] == {
+        "fetched": 0,
+        "new": 0,
+        "skipped": 0,
+        "revised": 0,
+        "status": "success",
+    }
+    assert memory.stats()["total_articles"] == 0
+
+
 def _item(**overrides):
     base = {
         "title": "OpenAI ships GPT-5",
