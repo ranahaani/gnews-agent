@@ -4,6 +4,11 @@
 
 The journalism layer your AI agent is missing. Fetch published news from Reuters, BBC, AP, TechCrunch, and the 141-country Google News graph; dedup it; embed it; store it persistently; and query it semantically — over a Python API, a CLI, or an MCP server that drops straight into Claude.
 
+<a href="https://www.rapidproxy.io/?ref=gnews&utm_source=github&utm_medium=readme&utm_campaign=gnews_agent">
+  <img src="https://github.com/ranahaani/GNews/raw/master/imgs/rapidproxy-banner.png" alt="RapidProxy — Residential and ISP Proxies for Web Scraping" width="100%">
+</a>
+<p align="center"><sub>Sponsored by <a href="https://www.rapidproxy.io/?ref=gnews&utm_source=github&utm_medium=readme&utm_campaign=gnews_agent">RapidProxy</a> — 90M+ residential IPs with smart rotation and non-expiring traffic, from $0.55/GB. Ingesting at scale and hitting IP blocks? Route GNews through RapidProxy and get 10% off with code <b>RAPID10</b>.</sub></p>
+
 ## Table of Contents
 
 - [Installation](#installation)
