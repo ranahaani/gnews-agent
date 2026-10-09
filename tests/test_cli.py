@@ -39,6 +39,10 @@ class StubMemory:
         self.calls.append(("timeline", topic, kwargs))
         return [{"date": "2026-06-16", "count": 1}]
 
+    def changes(self, topic=None, **kwargs):
+        self.calls.append(("changes", topic, kwargs))
+        return {"new": [], "revised": [], "new_count": 0, "revised_count": 0}
+
 
 @pytest.fixture
 def runner(monkeypatch):
@@ -104,3 +108,14 @@ def test_timeline(runner):
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload[0]["date"] == "2026-06-16"
+
+
+def test_changes(runner):
+    cli_runner, stub = runner
+    result = cli_runner.invoke(cli.main, ["changes", "OpenAI", "--days", "1"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["revised_count"] == 0
+    _, topic, kwargs = stub.calls[0]
+    assert topic == "OpenAI"
+    assert kwargs["days"] == 1

@@ -79,3 +79,18 @@ def url_hash(url: str) -> str:
     )
     canonical = urlunsplit((parts.scheme.lower(), netloc, path, query, ""))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def content_hash(title: str, summary: str | None) -> str:
+    """Hash the stored text of one observation (title + feed description).
+
+    URL is excluded on purpose: the same CMS row can keep its URL while the
+    headline or lede is rewritten (A/B tests, corrections). Empty/None
+    summaries collapse to the same payload so a missing description is stable.
+    """
+    body = summary or ""
+    normalised = unicodedata.normalize("NFKD", body)
+    ascii_only = normalised.encode("ascii", "ignore").decode("ascii")
+    folded = _WHITESPACE_RE.sub(" ", ascii_only.lower().strip())
+    payload = f"{title_slug(title)}|{folded}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

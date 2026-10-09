@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+from tests.integration.conftest import skip_if_no_live_articles
+
 pytestmark = pytest.mark.integration
 
 
@@ -46,7 +48,9 @@ def test_cli_ingest_then_search(tmp_path):
     ingest = _run(common + ["ingest", "artificial intelligence", "--no-pretty"])
     assert ingest.returncode == 0, ingest.stderr
     ingest_payload = json.loads(ingest.stdout)
-    assert ingest_payload["artificial intelligence"]["status"] == "success"
+    topic = ingest_payload["artificial intelligence"]
+    assert topic["status"] == "success"
+    skip_if_no_live_articles(topic.get("fetched", 0))
 
     search = _run(common + ["search", "artificial intelligence", "--limit", "3", "--no-pretty"])
     assert search.returncode == 0, search.stderr

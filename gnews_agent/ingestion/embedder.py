@@ -10,8 +10,11 @@ Optional: OpenAI ``text-embedding-3-small`` (1536-dim) via
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class Embedder(Protocol):
@@ -31,6 +34,10 @@ class SentenceTransformerEmbedder:
 
     def _load(self):
         if self._model is None:
+            logger.info(
+                "Loading embedding model %s — first run downloads ~80MB and can sit still for a minute",
+                self.embed_model,
+            )
             from sentence_transformers import SentenceTransformer
 
             self._model = SentenceTransformer(self.embed_model)

@@ -13,7 +13,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from gnews_agent.ingestion.deduplicator import composite_key, url_hash
+from gnews_agent.ingestion.deduplicator import composite_key, content_hash, url_hash
 from gnews_agent.query import parse_date
 
 
@@ -36,7 +36,34 @@ class SqliteStore:
     def _apply_schema(self) -> None:
         schema_sql = files("gnews_agent.storage").joinpath("schema.sql").read_text(encoding="utf-8")
         self._conn.executescript(schema_sql)
+        self._backfill_observations()
         self._conn.commit()
+
+    def _backfill_observations(self) -> None:
+        """Seed a baseline snapshot for articles created before this table existed."""
+        rows = self._conn.execute(
+            """
+            SELECT a.id, a.title, a.summary, a.url
+            FROM articles a
+            LEFT JOIN article_observations o ON o.article_id = a.id
+            WHERE o.id IS NULL
+            """
+        ).fetchall()
+        for row in rows:
+            self._conn.execute(
+                """
+                INSERT OR IGNORE INTO article_observations
+                    (article_id, content_hash, title, summary, url)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    row["id"],
+                    content_hash(row["title"], row["summary"]),
+                    row["title"],
+                    row["summary"] or "",
+                    row["url"],
+                ),
+            )
 
     def close(self) -> None:
         self._conn.close()
@@ -202,6 +229,165 @@ class SqliteStore:
         """
         rows = self._conn.execute(sql, params).fetchall()
         return [{"date": r["day"], "count": int(r["count"])} for r in rows if r["day"]]
+
+    def get_article_id_by_url(self, url: str) -> int | None:
+        """Resolve a story by canonical URL hash. ``None`` if unseen."""
+        hashed = url_hash(url)
+        if not hashed:
+            return None
+        row = self._conn.execute(
+            "SELECT id FROM articles WHERE url_hash = ? LIMIT 1",
+            (hashed,),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    def record_observation(
+        self,
+        article_id: int,
+        title: str,
+        summary: str | None,
+        url: str,
+    ) -> bool:
+        """Append an immutable snapshot. Returns False if this text was already stored."""
+        hashed = content_hash(title, summary)
+        with self.transaction() as conn:
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO article_observations
+                        (article_id, content_hash, title, summary, url)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (article_id, hashed, title, summary or "", url),
+                )
+            except sqlite3.IntegrityError:
+                return False
+        return True
+
+    def list_observations(self, article_id: int) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM article_observations
+            WHERE article_id = ?
+            ORDER BY fetched_at ASC, id ASC
+            """,
+            (article_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def update_article(
+        self,
+        article_id: int,
+        *,
+        title: str,
+        summary: str | None,
+        url: str,
+    ) -> None:
+        """Point the latest-view row at the newest observation."""
+        with self.transaction() as conn:
+            conn.execute(
+                """
+                UPDATE articles
+                SET title = ?, summary = ?, url = ?, url_hash = ?
+                WHERE id = ?
+                """,
+                (title, summary, url, url_hash(url), article_id),
+            )
+
+    def changes(
+        self,
+        *,
+        topic: str | None = None,
+        since_iso: str | None = None,
+    ) -> dict[str, Any]:
+        """Split articles into new-in-window vs revised-in-window.
+
+        * **new** — first observation falls on or after ``since_iso``
+        * **revised** — first observation is older, latest observation is in-window
+        """
+        since_iso = since_iso or "0000-01-01"
+        topic_sql = ""
+        extra: list[Any] = []
+        if topic:
+            topic_sql = "AND a.topic = ?"
+            extra.append(topic)
+
+        new_rows = self._conn.execute(
+            f"""
+            SELECT a.*, bounds.first_at, bounds.last_at
+            FROM (
+                SELECT article_id,
+                       MIN(fetched_at) AS first_at,
+                       MAX(fetched_at) AS last_at
+                FROM article_observations
+                GROUP BY article_id
+            ) bounds
+            JOIN articles a ON a.id = bounds.article_id
+            WHERE bounds.first_at >= ?
+            {topic_sql}
+            ORDER BY bounds.first_at DESC
+            """,
+            [since_iso, *extra],
+        ).fetchall()
+
+        revised_rows = self._conn.execute(
+            f"""
+            SELECT a.*, bounds.first_at, bounds.last_at
+            FROM (
+                SELECT article_id,
+                       MIN(fetched_at) AS first_at,
+                       MAX(fetched_at) AS last_at
+                FROM article_observations
+                GROUP BY article_id
+            ) bounds
+            JOIN articles a ON a.id = bounds.article_id
+            WHERE bounds.first_at < ? AND bounds.last_at >= ?
+            {topic_sql}
+            ORDER BY bounds.last_at DESC
+            """,
+            [since_iso, since_iso, *extra],
+        ).fetchall()
+
+        new = [self._change_row(dict(r), previous_title=None) for r in new_rows]
+        revised = [
+            self._change_row(dict(r), previous_title=self._previous_title(int(r["id"])))
+            for r in revised_rows
+        ]
+        return {
+            "new": new,
+            "revised": revised,
+            "new_count": len(new),
+            "revised_count": len(revised),
+        }
+
+    def _previous_title(self, article_id: int) -> str | None:
+        rows = self._conn.execute(
+            """
+            SELECT title FROM article_observations
+            WHERE article_id = ?
+            ORDER BY fetched_at DESC, id DESC
+            LIMIT 2
+            """,
+            (article_id,),
+        ).fetchall()
+        if len(rows) < 2:
+            return None
+        return rows[1]["title"]
+
+    @staticmethod
+    def _change_row(row: dict[str, Any], *, previous_title: str | None) -> dict[str, Any]:
+        payload = {
+            "id": int(row["id"]),
+            "title": row["title"],
+            "url": row["url"],
+            "publisher": row.get("publisher_name"),
+            "summary": row.get("summary"),
+            "topic": row.get("topic"),
+            "published_date": row.get("published_date"),
+        }
+        if previous_title is not None:
+            payload["previous_title"] = previous_title
+        return payload
 
     # ---- crawl runs ------------------------------------------------------
 

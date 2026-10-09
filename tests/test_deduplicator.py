@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from gnews_agent.ingestion.deduplicator import (
     composite_key,
+    content_hash,
     publisher_norm,
     title_slug,
     url_hash,
@@ -90,3 +91,36 @@ class TestUrlHash:
         a = url_hash("https://Example.COM/story")
         b = url_hash("https://example.com/story")
         assert a == b
+
+
+class TestContentHash:
+    """Observation identity: hash the title + feed description, not the URL.
+
+    Publishers rewrite headlines and A/B-test them; the URL stays put. Hashing
+    the text we actually stored is how a later ingest can tell "same story,
+    new version" from "exact duplicate".
+    """
+
+    def test_same_title_and_summary_match(self):
+        a = content_hash("OpenAI ships GPT-5", "OpenAI today announced GPT-5.")
+        b = content_hash("OpenAI ships GPT-5", "OpenAI today announced GPT-5.")
+        assert a == b
+
+    def test_whitespace_is_collapsed(self):
+        a = content_hash("OpenAI ships GPT-5", "OpenAI  today   announced GPT-5.")
+        b = content_hash("  OpenAI ships GPT-5  ", "OpenAI today announced GPT-5.")
+        assert a == b
+
+    def test_headline_rewrite_is_a_new_hash(self):
+        original = content_hash("OpenAI ships GPT-5", "OpenAI today announced GPT-5.")
+        rewritten = content_hash("OpenAI unveils GPT-5", "OpenAI today announced GPT-5.")
+        assert original != rewritten
+
+    def test_summary_edit_is_a_new_hash(self):
+        a = content_hash("OpenAI ships GPT-5", "OpenAI today announced GPT-5.")
+        b = content_hash("OpenAI ships GPT-5", "OpenAI delayed GPT-5 until next week.")
+        assert a != b
+
+    def test_missing_summary_is_stable(self):
+        assert content_hash("Title", None) == content_hash("Title", "")
+        assert content_hash("Title", None) != content_hash("Other", None)

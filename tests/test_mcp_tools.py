@@ -31,6 +31,10 @@ class StubMemory:
         self.calls.append(("timeline", topic, kwargs))
         return [{"date": "2026-06-16", "count": 1}]
 
+    def changes(self, topic=None, **kwargs):
+        self.calls.append(("changes", topic, kwargs))
+        return {"new": [], "revised": [], "new_count": 0, "revised_count": 0}
+
 
 @pytest.fixture(autouse=True)
 def stub_memory(monkeypatch):
@@ -59,6 +63,14 @@ def test_get_timeline(stub_memory):
 def test_get_brief(stub_memory):
     out = mcp_server.get_brief("OpenAI", days=5)
     assert out["summary"] == "ok"
+
+
+def test_get_changes(stub_memory):
+    out = mcp_server.get_changes("OpenAI", days=2)
+    assert out["new_count"] == 0
+    _, topic, kw = stub_memory.calls[0]
+    assert topic == "OpenAI"
+    assert kw["days"] == 2
 
 
 def test_monitor_topic_validates_webhook(stub_memory):

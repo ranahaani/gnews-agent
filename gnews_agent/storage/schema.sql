@@ -39,6 +39,23 @@ CREATE TABLE IF NOT EXISTS dedup_index (
 );
 CREATE INDEX IF NOT EXISTS idx_dedup_title_pub ON dedup_index(title_slug, publisher_norm);
 
+-- Immutable snapshots of what we actually fetched. ``articles`` is the latest
+-- view of a story; this table is the audit trail. Identity of a story is the
+-- canonical URL (articles.url_hash). Title+publisher remains a candidate key
+-- for Google News URL variants of the same headline.
+CREATE TABLE IF NOT EXISTS article_observations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    article_id      INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    content_hash    TEXT    NOT NULL,
+    title           TEXT    NOT NULL,
+    summary         TEXT,
+    url             TEXT    NOT NULL,
+    fetched_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(article_id, content_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_obs_article ON article_observations(article_id, fetched_at);
+CREATE INDEX IF NOT EXISTS idx_obs_fetched ON article_observations(fetched_at);
+
 CREATE TABLE IF NOT EXISTS crawl_runs (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     topic             TEXT,

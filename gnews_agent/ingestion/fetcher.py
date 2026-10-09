@@ -94,6 +94,8 @@ class Fetcher:
             articles = self._dispatch(topic, method)
             self._last_fetch_at[topic] = time.monotonic()
             result.articles = [self._normalise(a, topic) for a in articles]
+            if not result.articles:
+                logger.warning("GNews returned 0 articles for %r via %s", topic, method)
         except RateLimitError as exc:
             logger.warning("topic %r rate-limited after GNews retries: %s", topic, exc)
             self.cool_down(topic)

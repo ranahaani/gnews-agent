@@ -188,6 +188,16 @@ def timeline(ctx: click.Context, topic: str, days: int, pretty: bool) -> None:
     _emit(memory.timeline(topic, days=days), pretty)
 
 
+@main.command(help="Articles new or rewritten since --days ago.")
+@click.argument("topic", required=False, default=None)
+@click.option("--days", type=int, default=1, show_default=True)
+@click.option("--pretty/--no-pretty", default=True)
+@click.pass_context
+def changes(ctx: click.Context, topic: str | None, days: int, pretty: bool) -> None:
+    memory = ctx.obj["memory_factory"]()
+    _emit(memory.changes(topic, days=days), pretty)
+
+
 @main.command(help="Run the FastMCP server (stdio or HTTP).")
 @click.option("--transport", type=click.Choice(["stdio", "http"]), default="stdio", show_default=True)
 @click.option("--port", type=int, default=8000, show_default=True)

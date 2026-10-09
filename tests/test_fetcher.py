@@ -7,6 +7,7 @@ import pytest
 from gnews.exceptions import RateLimitError
 
 from gnews_agent.ingestion.fetcher import Fetcher
+from tests.integration.conftest import skip_if_no_live_articles
 
 
 class FakeGNews:
@@ -84,3 +85,12 @@ def test_unknown_method_rejected():
     fetcher = Fetcher(gnews_client=FakeGNews(), min_interval_seconds=0)
     with pytest.raises(ValueError):
         fetcher.fetch("OpenAI", method="get_news_by_telepathy")
+
+
+def test_skip_if_no_live_articles_skips_on_empty():
+    with pytest.raises(pytest.skip.Exception, match="Google News RSS"):
+        skip_if_no_live_articles(0)
+
+
+def test_skip_if_no_live_articles_allows_hits():
+    skip_if_no_live_articles(3)
