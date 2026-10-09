@@ -216,6 +216,7 @@ ingest doesn't pay the ~80MB cold-start.
 
 ## Status
 
+- **v0.1.1** — Packaging refresh: PyPI page now matches the current README (sponsor block). No code changes.
 - **v0.1.0** — Library + CLI + MCP server + Claude Code skill scaffold.
   End-to-end ingest → search → brief works against a real LLM key.
   83 unit + 24 integration tests pass.
